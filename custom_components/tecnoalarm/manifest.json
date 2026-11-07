@@ -1,0 +1,12 @@
+{
+  "domain": "tecnoalarm",
+  "name": "Tecnoalarm",
+  "version": "0.1.0",
+  "config_flow": true,
+  "documentation": "https://github.com/rickycraft/hass-tecnoalarm",
+  "issue_tracker": "https://github.com/rickycraft/hass-tecnoalarm/issues",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "requirements": ["cryptography>=41.0.7"],
+  "codeowners": ["@rickycraft"]
+}

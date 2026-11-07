@@ -1,0 +1,60 @@
+{
+  "title": "Tecnoalarm",
+  "options": {
+    "step": {
+      "init": {
+        "title": "Connection settings",
+        "description": "Update the panel connection, credentials and connection method. Saving authenticates with the panel and reloads the integration. Keep the connection open to reuse authentication with a keepalive every 5 seconds, or turn it off to connect and disconnect on every 30-second status poll.",
+        "data": {
+          "host": "Host",
+          "port": "TCP port",
+          "appid": "APPID (hexadecimal)",
+          "passphrase": "Direct panel passphrase",
+          "user_code": "Numeric user code",
+          "persistent_connection": "Keep authenticated connection open"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The panel rejected the user code.",
+      "invalid_config": "Check host, port, hexadecimal APPID, passphrase and numeric user code.",
+      "cannot_connect": "Unable to authenticate with the panel. Check connectivity and the direct passphrase.",
+      "already_configured": "This panel is already configured."
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Tecnoalarm",
+        "description": "Read-only direct panel access. Authentication is required. APPID is hexadecimal; user code must contain 4\u20136 digits.",
+        "data": {
+          "host": "Host",
+          "port": "TCP port",
+          "appid": "APPID (hexadecimal)",
+          "passphrase": "Direct panel passphrase",
+          "user_code": "Numeric user code"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Tecnoalarm",
+        "description": "Update the direct panel connection and credentials. Saving authenticates with the panel and reloads the integration.",
+        "data": {
+          "host": "Host",
+          "port": "TCP port",
+          "appid": "APPID (hexadecimal)",
+          "passphrase": "Direct panel passphrase",
+          "user_code": "Numeric user code"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The panel rejected the user code.",
+      "invalid_config": "Check host, port, hexadecimal APPID, passphrase and numeric user code.",
+      "cannot_connect": "Unable to authenticate with the panel. Check connectivity and the direct passphrase."
+    },
+    "abort": {
+      "already_configured": "This panel is already configured.",
+      "reconfigure_successful": "Configuration updated successfully."
+    }
+  }
+}

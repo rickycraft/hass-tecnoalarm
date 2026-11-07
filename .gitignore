@@ -1,0 +1,18 @@
+# Credentials
+.env
+.env.*
+!.env.example
+
+# Local artifacts and backups
+*.apk
+/backups/
+
+# Local development directories
+/analysis
+/standalone
+
+# Downloaded tooling and generated files
+/.tools/
+__pycache__/
+*.py[cod]
+*.log

@@ -12,7 +12,7 @@ A custom Home Assistant integration for monitoring Tecnoalarm alarm panels over 
 
 - One alarm control panel entity per program accessible to your user code, showing its name and arming state.
 - Separate binary sensors for panel-wide alarm and fault indicators.
-- Local polling every 30 seconds.
+- Configurable local polling from 1 to 600 seconds (default: 30).
 - Configuration through the Home Assistant UI.
 - Optional persistent connection with automatic reconnection.
 
@@ -54,12 +54,17 @@ You need a panel with direct TCP access enabled, reachable from Home Assistant, 
 | APPID | Your app's hexadecimal APPID, 1–4 digits, for example `0462`. Use your actual value. |
 | Passphrase | Panel's direct-access passphrase; this can differ from a cloud registration passphrase. |
 | User code | Numeric panel user code, 4–6 digits. Preserve leading zeros. |
+| Polling interval | Seconds between polls, from `1` to `600`; defaults to `30`. Set to `0` to keep authentication open. |
 
 Setup validates authentication before saving. The integration connects directly to the panel; cloud registration and cloud connections are not part of the Home Assistant setup.
 
+You can change **Polling interval** later under **Reconfigure** or **Configure**. Saving changes reloads the integration.
+
 To update credentials or connection details, open the integration entry and select **Reconfigure** or **Configure**.
 
-Under **Configure**, **Keep authenticated connection open** is enabled by default. It reuses the connection between polls and sends a read-only keepalive every 5 seconds. Disable it to connect, authenticate, read status, and disconnect on every poll. Saving changes reloads the integration.
+With a positive polling interval, each poll connects, authenticates, reads status, and disconnects. Set the interval to `0` to reuse the authenticated connection, send a read-only keepalive every 5 seconds, and read status every 30 seconds. Zero selects the persistent connection mode; it does not disable status updates. An explicitly enabled legacy persistent connection setting is treated as `0` until the interval is saved.
+
+When saving either form, the integration waits for any active status read or keepalive to finish, pauses background panel traffic, and disconnects the current session before validating the credentials. On success it stays paused until the integration reloads. On failure it resumes using the previous settings. Opening or cancelling the form without saving does not interrupt monitoring.
 
 ## Reported states
 

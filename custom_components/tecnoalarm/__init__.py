@@ -9,9 +9,9 @@ async def async_setup_entry(hass, entry):
 
     from .client import Client
     from .coordinator import TecnoalarmCoordinator
-    from .const import CONF_PERSISTENT_CONNECTION
+    from .const import polling_interval
 
-    persistent = entry.options.get(CONF_PERSISTENT_CONNECTION, True)
+    persistent = polling_interval(entry.options) == 0
     client = Client(**entry.data, persistent_connection=persistent)
     coordinator = TecnoalarmCoordinator(hass, entry, client)
     try:

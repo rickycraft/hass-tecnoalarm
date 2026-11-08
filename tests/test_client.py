@@ -14,6 +14,22 @@ CONFIG = dict(host="192.0.2.10", port=10001, appid="0462",
 
 
 class ClientTests(unittest.TestCase):
+    def test_disconnect_releases_session_and_allows_reconnect(self):
+        client = Client(**CONFIG)
+        sockets = [MagicMock(), MagicMock()]
+        with patch.object(auth, "Connection", side_effect=sockets), \
+                patch.object(auth, "login", side_effect=[2, 3]) as login, \
+                patch.object(client, "_read_status", return_value={"ok": True}):
+            client.read_status()
+            client.disconnect()
+            sockets[0].close.assert_called_once_with()
+            self.assertIsNone(client._connection)
+            self.assertIsNone(client._utn)
+            self.assertEqual(client.read_status(), {"ok": True})
+            self.assertEqual(login.call_count, 2)
+            self.assertIs(client._connection, sockets[1])
+            client.close()
+
     def test_connection_cfb_known_vector_without_deprecation_warning(self):
         key = bytes.fromhex("2b7e151628aed2a6abf7158809cf4f3c")
         iv = bytes.fromhex("000102030405060708090a0b0c0d0e0f")

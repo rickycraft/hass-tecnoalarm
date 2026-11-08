@@ -3,21 +3,21 @@
   "options": {
     "step": {
       "init": {
-        "title": "Connection settings",
-        "description": "Update the panel connection, credentials and connection method. Saving authenticates with the panel and reloads the integration. Keep the connection open to reuse authentication with a keepalive every 5 seconds, or turn it off to connect and disconnect on every 30-second status poll.",
+        "title": "Reconfigure Tecnoalarm",
+        "description": "Update the panel connection, credentials and polling interval. When you save, polling and keepalives pause and the current session disconnects before authentication. On success the integration reloads; on failure the previous settings resume. Polling interval: 1\u2013600 seconds (default 30). Each poll connects, authenticates, reads status and disconnects. Set to 0 to keep authentication open with a keepalive every 5 seconds and status reads every 30 seconds.",
         "data": {
           "host": "Host",
           "port": "TCP port",
           "appid": "APPID (hexadecimal)",
           "passphrase": "Direct panel passphrase",
           "user_code": "Numeric user code",
-          "persistent_connection": "Keep authenticated connection open"
+          "polling_interval": "Polling interval (seconds; 0 keeps authentication open)"
         }
       }
     },
     "error": {
       "invalid_auth": "The panel rejected the user code.",
-      "invalid_config": "Check host, port, hexadecimal APPID, passphrase and numeric user code.",
+      "invalid_config": "Check host, port, hexadecimal APPID, passphrase, numeric user code and polling interval (an integer from 0 to 600).",
       "cannot_connect": "Unable to authenticate with the panel. Check connectivity and the direct passphrase.",
       "already_configured": "This panel is already configured."
     }
@@ -26,30 +26,32 @@
     "step": {
       "user": {
         "title": "Connect to Tecnoalarm",
-        "description": "Read-only direct panel access. Authentication is required. APPID is hexadecimal; user code must contain 4\u20136 digits.",
+        "description": "Read-only direct panel access. Authentication is required. APPID is hexadecimal; user code must contain 4\u20136 digits. Polling interval: 1\u2013600 seconds (default 30). Each poll connects, authenticates, reads status and disconnects. Set to 0 to keep authentication open with a keepalive every 5 seconds and status reads every 30 seconds.",
         "data": {
           "host": "Host",
           "port": "TCP port",
           "appid": "APPID (hexadecimal)",
           "passphrase": "Direct panel passphrase",
-          "user_code": "Numeric user code"
+          "user_code": "Numeric user code",
+          "polling_interval": "Polling interval (seconds; 0 keeps authentication open)"
         }
       },
       "reconfigure": {
         "title": "Reconfigure Tecnoalarm",
-        "description": "Update the direct panel connection and credentials. Saving authenticates with the panel and reloads the integration.",
+        "description": "Update the panel connection, credentials and polling interval. When you save, polling and keepalives pause and the current session disconnects before authentication. On success the integration reloads; on failure the previous settings resume. Polling interval: 1\u2013600 seconds (default 30). Each poll connects, authenticates, reads status and disconnects. Set to 0 to keep authentication open with a keepalive every 5 seconds and status reads every 30 seconds.",
         "data": {
           "host": "Host",
           "port": "TCP port",
           "appid": "APPID (hexadecimal)",
           "passphrase": "Direct panel passphrase",
-          "user_code": "Numeric user code"
+          "user_code": "Numeric user code",
+          "polling_interval": "Polling interval (seconds; 0 keeps authentication open)"
         }
       }
     },
     "error": {
       "invalid_auth": "The panel rejected the user code.",
-      "invalid_config": "Check host, port, hexadecimal APPID, passphrase and numeric user code.",
+      "invalid_config": "Check host, port, hexadecimal APPID, passphrase, numeric user code and polling interval (an integer from 0 to 600).",
       "cannot_connect": "Unable to authenticate with the panel. Check connectivity and the direct passphrase."
     },
     "abort": {

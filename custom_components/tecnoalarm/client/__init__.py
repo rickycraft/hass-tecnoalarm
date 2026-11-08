@@ -101,6 +101,11 @@ class Client:
             self._closed = True
             self._disconnect()
 
+    def disconnect(self):
+        """Release the panel session, allowing a later status read to reconnect."""
+        with self._lock:
+            self._disconnect()
+
     def _read_status(self):
         def read(opcode, size, index=0):
             if opcode not in READ_OPCODES:

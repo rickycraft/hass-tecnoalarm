@@ -19,7 +19,7 @@ from custom_components.tecnoalarm import alarm_control_panel as alarms
 from custom_components.tecnoalarm import binary_sensor as sensors
 from custom_components.tecnoalarm.config_flow import TecnoalarmConfigFlow
 from custom_components.tecnoalarm.coordinator import TecnoalarmCoordinator
-from custom_components.tecnoalarm.const import CONF_PERSISTENT_CONNECTION
+from custom_components.tecnoalarm.const import CONF_PERSISTENT_CONNECTION, CONF_POLLING, CONF_POLLING_INTERVAL
 
 from custom_components.tecnoalarm.client.auth import AuthenticationError
 
@@ -124,7 +124,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         flow.hass = self.hass
         result = await flow.async_step_user()
         self.assertEqual(result["type"], "form")
-        self.assertEqual(set(result["data_schema"]), set(CONFIG))
+        self.assertEqual(set(result["data_schema"]), set(CONFIG) | {CONF_POLLING_INTERVAL})
         with patch("custom_components.tecnoalarm.config_flow.Client") as client:
             result = await flow.async_step_user(CONFIG)
             self.assertEqual(result["type"], "create_entry")
@@ -147,6 +147,92 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["errors"], {"base": "invalid_config"})
             connect.assert_not_called()
 
+    async def test_polling_choice_saved_during_setup(self):
+        for polling in (0, 1, 30, 600):
+            with self.subTest(polling=polling), \
+                    patch("custom_components.tecnoalarm.config_flow.Client") as client:
+                flow = TecnoalarmConfigFlow()
+                flow.hass = self.hass
+                result = await flow.async_step_user(CONFIG | {CONF_POLLING_INTERVAL: polling})
+                self.assertEqual(result["data"], CONFIG)
+                self.assertEqual(result["options"], {CONF_POLLING_INTERVAL: polling})
+                client.assert_called_once_with(**CONFIG)
+
+    async def test_invalid_intervals_never_authenticate_or_pause_monitoring(self):
+        for kind in ("user", "reconfigure", "options"):
+            for interval in (-1, 601, 1.5, True, "30", None):
+                with self.subTest(kind=kind, interval=interval):
+                    flow = TecnoalarmConfigFlow()
+                    flow.hass = self.hass
+                    flow.context = {"source": "reconfigure", "entry_id": self.entry.entry_id}
+                    if kind == "options":
+                        flow = flow.async_get_options_flow(self.entry)
+                        flow.hass = self.hass
+                        flow.config_entry = self.entry
+                    step = getattr(flow, "async_step_init" if kind == "options"
+                                   else f"async_step_{kind}")
+                    with patch("custom_components.tecnoalarm.config_flow.Client") as client:
+                        result = await step(CONFIG | {CONF_POLLING_INTERVAL: interval})
+                        self.assertEqual(result["errors"], {"base": "invalid_config"})
+                        client.assert_not_called()
+                    self.client.disconnect.assert_not_called()
+                    self.hass.config_entries.async_update_entry.assert_not_called()
+
+    async def test_default_polling_interval_is_30(self):
+        flow = TecnoalarmConfigFlow()
+        flow.hass = self.hass
+        with patch("custom_components.tecnoalarm.config_flow.vol.Required",
+                   side_effect=lambda key, **kwargs: key) as required:
+            await flow.async_step_user()
+            required.assert_any_call(CONF_POLLING_INTERVAL, default=30)
+        with patch("custom_components.tecnoalarm.config_flow.Client"):
+            result = await flow.async_step_user(CONFIG)
+            self.assertEqual(result["options"], {CONF_POLLING_INTERVAL: 30})
+
+    async def test_polling_can_be_changed_in_reconfigure_and_options(self):
+        for polling in (0, 1, 30, 600):
+            with self.subTest(polling=polling):
+                self.entry.options = {CONF_POLLING_INTERVAL: 120,
+                                      "future_option": 1}
+                flow = TecnoalarmConfigFlow()
+                flow.hass = self.hass
+                flow.context = {"source": "reconfigure", "entry_id": self.entry.entry_id}
+                with patch.object(flow, "add_suggested_values_to_schema",
+                                  side_effect=lambda schema, values: schema) as suggested:
+                    await flow.async_step_reconfigure()
+                    self.assertEqual(suggested.call_args.args[1][CONF_POLLING_INTERVAL], 120)
+                with patch("custom_components.tecnoalarm.config_flow.Client") as client:
+                    await flow.async_step_reconfigure(CONFIG | {CONF_POLLING_INTERVAL: polling})
+                    client.assert_called_once_with(**CONFIG)
+                self.assertEqual(self.hass.config_entries.async_update_entry.call_args.kwargs[
+                    "options"], {**self.entry.options, CONF_POLLING_INTERVAL: polling})
+                options_flow = flow.async_get_options_flow(self.entry)
+                options_flow.config_entry = self.entry
+                options_flow.hass = self.hass
+                with patch.object(options_flow, "add_suggested_values_to_schema",
+                                  side_effect=lambda schema, values: schema) as suggested:
+                    await options_flow.async_step_init()
+                    self.assertEqual(suggested.call_args.args[1][CONF_POLLING_INTERVAL], 120)
+                with patch("custom_components.tecnoalarm.config_flow.Client") as client:
+                    result = await options_flow.async_step_init(CONFIG | {
+                        CONF_POLLING_INTERVAL: polling})
+                    client.assert_called_once_with(**CONFIG)
+                self.assertEqual(result["data"], {**self.entry.options, CONF_POLLING_INTERVAL: polling})
+
+    async def test_polling_intervals_keep_initial_and_manual_refresh(self):
+        for polling in (0, 1, 30, 600):
+            with self.subTest(polling=polling):
+                self.entry.options = {CONF_POLLING_INTERVAL: polling}
+                coordinator = TecnoalarmCoordinator(self.hass, self.entry, self.client)
+                self.assertEqual(coordinator.update_interval,
+                                 timedelta(seconds=polling or 30))
+                self.assertEqual(await coordinator._async_update_data(), DATA)
+                with patch("custom_components.tecnoalarm.client.Client"), \
+                        patch("custom_components.tecnoalarm.coordinator.TecnoalarmCoordinator") as coord:
+                    coord.return_value.async_config_entry_first_refresh = AsyncMock()
+                    await async_setup_entry(self.hass, self.entry)
+                    coord.return_value.async_config_entry_first_refresh.assert_awaited_once()
+
     async def test_reconfigure_shows_saved_values_and_keeps_failed_input(self):
         flow = TecnoalarmConfigFlow()
         flow.hass = self.hass
@@ -156,8 +242,10 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                           side_effect=lambda schema, values: schema) as suggested:
             result = await flow.async_step_reconfigure()
             self.assertEqual(result["step_id"], "reconfigure")
-            self.assertEqual(set(result["data_schema"]), set(CONFIG))
-            self.assertEqual(suggested.call_args.args[1], CONFIG)
+            self.assertEqual(set(result["data_schema"]),
+                             set(CONFIG) | {CONF_POLLING_INTERVAL})
+            self.assertEqual(suggested.call_args.args[1], CONFIG | {
+                CONF_POLLING_INTERVAL: 30})
             with patch("custom_components.tecnoalarm.config_flow.Client") as client:
                 for error, expected in ((AuthenticationError(), "invalid_auth"),
                                         (OSError(), "cannot_connect"),
@@ -198,7 +286,8 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                     create.assert_not_called()
                 self.hass.config_entries.async_update_entry.assert_called_with(
                     self.entry, unique_id=f"{changed['host'].lower()}:{changed['port']}",
-                    title=f"Tecnoalarm {changed['host']}", data=changed)
+                    title=f"Tecnoalarm {changed['host']}", data=changed,
+                    options={CONF_POLLING_INTERVAL: 30})
                 self.hass.config_entries.async_schedule_reload.assert_called_with(self.entry.entry_id)
                 self.assertEqual(self.entry.options, {CONF_PERSISTENT_CONNECTION: False})
 
@@ -215,7 +304,118 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.hass.config_entries.async_update_entry.assert_not_called()
         self.hass.config_entries.async_schedule_reload.assert_not_called()
 
+    async def test_reconfiguration_pauses_traffic_and_resumes_only_on_failure(self):
+        for options_flow in (False, True):
+            for failure in (None, AuthenticationError(), OSError()):
+                with self.subTest(options_flow=options_flow, failure=failure):
+                    self.coordinator = TecnoalarmCoordinator(self.hass, self.entry, self.client)
+                    self.coordinator.data = deepcopy(DATA)
+                    self.entry.runtime_data = self.coordinator
+                    self.client.reset_mock()
+                    started, finish = asyncio.Event(), asyncio.Event()
+                    with patch("custom_components.tecnoalarm.config_flow.Client") as client:
+                        async def execute(func):
+                            if func == client.return_value.authenticate:
+                                self.client.disconnect.assert_called_once_with()
+                                started.set()
+                                await finish.wait()
+                                if failure:
+                                    raise failure
+                            return func()
+
+                        self.hass.async_add_executor_job.side_effect = execute
+                        flow = TecnoalarmConfigFlow()
+                        flow.hass = self.hass
+                        flow.context = {"source": "reconfigure", "entry_id": self.entry.entry_id}
+                        if options_flow:
+                            flow = flow.async_get_options_flow(self.entry)
+                            flow.hass = self.hass
+                            flow.config_entry = self.entry
+                        step = flow.async_step_init if options_flow else flow.async_step_reconfigure
+                        # Merely opening the panel must leave monitoring running.
+                        await step()
+                        self.client.disconnect.assert_not_called()
+                        submit = asyncio.create_task(step(CONFIG | {
+                            CONF_POLLING_INTERVAL: 30}))
+                        await asyncio.wait_for(started.wait(), 1)
+                        poll = asyncio.create_task(self.coordinator._async_update_data())
+                        keepalive = asyncio.create_task(self.coordinator.async_keep_alive(None))
+                        await asyncio.sleep(0)
+                        self.client.read_status.assert_not_called()
+                        self.client.keep_alive.assert_not_called()
+                        finish.set()
+                        result = await submit
+                        await asyncio.gather(poll, keepalive)
+                        if failure:
+                            self.assertEqual(result["type"], "form")
+                            self.client.read_status.assert_called_once_with()
+                            self.client.keep_alive.assert_called_once_with()
+                        else:
+                            self.assertIn(result["type"], ("abort", "create_entry"))
+                            await self.coordinator._async_update_data()
+                            await self.coordinator.async_keep_alive(None)
+                            self.client.read_status.assert_not_called()
+                            self.client.keep_alive.assert_not_called()
+
+    async def test_reconfiguration_waits_for_inflight_panel_operations(self):
+        for operation in (self.client.read_status, self.client.keep_alive):
+            with self.subTest(operation=operation):
+                coordinator = TecnoalarmCoordinator(self.hass, self.entry, self.client)
+                started, finish = asyncio.Event(), asyncio.Event()
+                async def execute(func):
+                    if func == operation:
+                        started.set()
+                        await finish.wait()
+                    return func()
+                self.hass.async_add_executor_job.side_effect = execute
+                active = asyncio.create_task(coordinator._async_update_data()
+                    if operation == self.client.read_status else coordinator.async_keep_alive(None))
+                await asyncio.wait_for(started.wait(), 1)
+                validation_client = MagicMock()
+                validation = asyncio.create_task(
+                    coordinator.async_authenticate_for_reconfiguration(validation_client))
+                await asyncio.sleep(0)
+                validation_client.authenticate.assert_not_called()
+                finish.set()
+                await asyncio.gather(active, validation)
+                validation_client.authenticate.assert_called_once_with()
+
+    async def test_cancelled_validation_waits_before_resuming_monitoring(self):
+        started, finish = asyncio.Event(), asyncio.Event()
+        validation_client = MagicMock()
+        async def execute(func):
+            if func == validation_client.authenticate:
+                started.set()
+                await finish.wait()
+            return func()
+        self.hass.async_add_executor_job.side_effect = execute
+        validation = asyncio.create_task(
+            self.coordinator.async_authenticate_for_reconfiguration(validation_client))
+        await asyncio.wait_for(started.wait(), 1)
+        validation.cancel()
+        await asyncio.sleep(0)
+        self.assertFalse(validation.done())
+        poll = asyncio.create_task(self.coordinator._async_update_data())
+        await asyncio.sleep(0)
+        self.client.read_status.assert_not_called()
+        finish.set()
+        with self.assertRaises(asyncio.CancelledError):
+            await validation
+        await poll
+        self.client.read_status.assert_called_once_with()
+
+    async def test_reconfigure_unloaded_entry_validates_directly(self):
+        del self.entry.runtime_data
+        flow = TecnoalarmConfigFlow()
+        flow.hass = self.hass
+        flow.context = {"source": "reconfigure", "entry_id": self.entry.entry_id}
+        with patch("custom_components.tecnoalarm.config_flow.Client") as client:
+            result = await flow.async_step_reconfigure(CONFIG)
+            self.assertEqual(result["type"], "abort")
+            client.return_value.authenticate.assert_called_once_with()
+
     async def test_entry_lifecycle_and_first_refresh_failure(self):
+        self.entry.options = {CONF_POLLING_INTERVAL: 0}
         with patch("custom_components.tecnoalarm.client.Client") as client, \
                 patch("custom_components.tecnoalarm.coordinator.TecnoalarmCoordinator") as coord, \
                 patch("homeassistant.helpers.event.async_track_time_interval") as track:
@@ -252,8 +452,10 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
             client.return_value.close.assert_called_once_with()
 
     async def test_connection_options_show_current_value_and_save(self):
-        for options, expected in (({}, True), ({CONF_PERSISTENT_CONNECTION: False}, False),
-                                  ({CONF_PERSISTENT_CONNECTION: True}, True)):
+        for options, expected in (({}, 30), ({CONF_POLLING_INTERVAL: 0}, 0),
+                                  ({CONF_POLLING_INTERVAL: 600}, 600),
+                                  ({CONF_PERSISTENT_CONNECTION: False, CONF_POLLING: True}, 30),
+                                  ({CONF_PERSISTENT_CONNECTION: True, CONF_POLLING: True}, 0)):
             with self.subTest(options=options), \
                     patch("custom_components.tecnoalarm.config_flow.vol.Required",
                           side_effect=lambda key, **kwargs: key) as required, \
@@ -266,21 +468,21 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                                   side_effect=lambda schema, values: schema) as suggested:
                     result = await flow.async_step_init()
                     self.assertEqual(suggested.call_args.args[1], {
-                        **CONFIG, CONF_PERSISTENT_CONNECTION: expected})
+                        **CONFIG, CONF_POLLING_INTERVAL: expected})
                 self.assertEqual(result["type"], "form")
-                self.assertEqual(set(result["data_schema"]), set(CONFIG) | {CONF_PERSISTENT_CONNECTION})
-                required.assert_any_call(CONF_PERSISTENT_CONNECTION, default=expected)
+                self.assertEqual(set(result["data_schema"]), set(CONFIG) | {CONF_POLLING_INTERVAL})
+                required.assert_any_call(CONF_POLLING_INTERVAL, default=expected)
                 changed = CONFIG | {"host": "Panel.Example", "port": 10002, "appid": "1234",
                                     "passphrase": "updated-secret", "user_code": "4567"}
-                saved = await flow.async_step_init(changed | {CONF_PERSISTENT_CONNECTION: not expected})
+                saved = await flow.async_step_init(changed | {CONF_POLLING_INTERVAL: 120})
                 client.assert_called_once_with(**changed)
                 client.return_value.authenticate.assert_called_once_with()
                 self.hass.config_entries.async_entry_for_domain_unique_id.assert_called_with(
                     "tecnoalarm", "panel.example:10002")
                 self.assertEqual(saved["type"], "create_entry")
-                self.assertEqual(saved["data"], {CONF_PERSISTENT_CONNECTION: not expected})
+                self.assertEqual(saved["data"], {CONF_POLLING_INTERVAL: 120})
                 self.hass.config_entries.async_update_entry.assert_called_with(
-                    self.entry, data=changed, options={CONF_PERSISTENT_CONNECTION: not expected},
+                    self.entry, data=changed, options={CONF_POLLING_INTERVAL: 120},
                     unique_id="panel.example:10002", title="Tecnoalarm Panel.Example")
                 self.hass.config_entries.async_schedule_reload.assert_called_with(self.entry.entry_id)
 
@@ -288,7 +490,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         flow = TecnoalarmConfigFlow.async_get_options_flow(self.entry)
         flow.config_entry = self.entry
         flow.hass = self.hass
-        submitted = CONFIG | {"host": "192.0.2.20", CONF_PERSISTENT_CONNECTION: False}
+        submitted = CONFIG | {"host": "192.0.2.20", CONF_POLLING_INTERVAL: 600}
         with patch("custom_components.tecnoalarm.config_flow.Client") as client, \
                 patch.object(flow, "add_suggested_values_to_schema",
                              side_effect=lambda schema, values: schema) as suggested:
@@ -313,11 +515,11 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         flow = TecnoalarmConfigFlow.async_get_options_flow(self.entry)
         flow.config_entry = self.entry
         flow.hass = self.hass
-        self.entry.options = {CONF_PERSISTENT_CONNECTION: True, "future_option": 1}
+        self.entry.options = {CONF_POLLING_INTERVAL: 0, "future_option": 1}
         self.hass.config_entries.async_entry_for_domain_unique_id.return_value = self.entry
         changed = CONFIG | {"user_code": "4567"}
         with patch("custom_components.tecnoalarm.config_flow.Client"):
-            result = await flow.async_step_init(changed | {CONF_PERSISTENT_CONNECTION: True})
+            result = await flow.async_step_init(changed | {CONF_POLLING_INTERVAL: 0})
         self.assertEqual(result["data"], self.entry.options)
         self.hass.config_entries.async_update_entry.assert_called_once_with(
             self.entry, data=changed, options=self.entry.options,
@@ -325,12 +527,13 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.hass.config_entries.async_schedule_reload.assert_called_once_with(self.entry.entry_id)
 
     async def test_connection_modes_apply_on_setup_and_reload(self):
-        for persistent in (False, True):
-            with self.subTest(persistent=persistent), \
+        for interval in (0, 1, 30, 600):
+            persistent = interval == 0
+            with self.subTest(interval=interval), \
                     patch("custom_components.tecnoalarm.client.Client") as client, \
                     patch("custom_components.tecnoalarm.coordinator.TecnoalarmCoordinator") as coord, \
                     patch("homeassistant.helpers.event.async_track_time_interval") as track:
-                self.entry.options = {CONF_PERSISTENT_CONNECTION: persistent}
+                self.entry.options = {CONF_POLLING_INTERVAL: interval}
                 coord.return_value.async_config_entry_first_refresh = AsyncMock()
                 coord.return_value.client = client.return_value
                 self.assertTrue(await async_setup_entry(self.hass, self.entry))

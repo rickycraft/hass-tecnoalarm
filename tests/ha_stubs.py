@@ -44,7 +44,7 @@ class ConfigFlow:
 
     def async_update_reload_and_abort(self, entry, **kwargs):
         self.hass.config_entries.async_update_entry(entry, **{
-            key: value for key, value in kwargs.items() if key in ("unique_id", "title")
+            key: value for key, value in kwargs.items() if key in ("unique_id", "title", "options")
         }, data={**entry.data, **kwargs.get("data_updates", {})})
         self.hass.config_entries.async_schedule_reload(entry.entry_id)
         return {"type": "abort", "reason": kwargs["reason"]}
